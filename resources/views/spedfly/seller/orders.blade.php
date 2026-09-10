@@ -73,7 +73,7 @@
                                     ];
                                 @endphp
                                 <tr>
-                                    <td><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
+                                    <td data-order="{{ $order->id }}"><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
                                     <td><span class="fw-semibold text-primary">{{ $order->external_order_id }}</span></td>
                                     <td>{{ optional($order->ordered_at)->format('d M Y') ?? $order->created_at->format('d M Y') }}</td>
                                     <td>
@@ -178,7 +178,8 @@
     if ($('#ordersTable').length && !$('#ordersTable tbody tr.empty-row').length) {
       $('#ordersTable').DataTable({
         aLengthMenu: [[5, 10, 25, -1], [5, 10, 25, 'All']],
-        iDisplayLength: 5
+        iDisplayLength: 5,
+        order: []
       });
     }
 

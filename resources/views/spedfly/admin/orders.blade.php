@@ -124,7 +124,7 @@
                   ];
                 @endphp
                 <tr>
-                  <td><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
+                  <td data-order="{{ $order->id }}"><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
                   <td><span class="fw-semibold text-primary">{{ $order->external_order_id }}</span></td>
                   <td>{{ $order->customer?->name ?? '—' }}</td>
                   <td><span class="badge {{ $badgeClass }}">{{ $statusOptions[$status] ?? ucfirst($status) }}</span></td>
@@ -184,9 +184,9 @@
         <h4 class="modal-title fw-semibold" id="trackOrderModalLabel">{{ __('ui.track_order') }}</h4>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form id="trackOrderForm" action="" method="post">
+      <form id="trackOrderForm" method="post" action="">
         @csrf
-        @method('PATCH')
+        @method('PUT')
         <div class="modal-body px-4 py-3">
           <div class="row g-3">
             <div class="col-md-6">
@@ -248,34 +248,34 @@
               <input type="text" name="external_order_id" class="form-control" placeholder="Ex: #1001" readonly>
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Customer Name</label>
-              <input type="text" name="customer_name" class="form-control" placeholder="Customer name" readonly>
+              <label class="form-label fw-semibold">{{ __('ui.customer') }}</label>
+              <input type="text" name="customer_name" class="form-control" readonly>
             </div>
             <div class="col-12">
-              <label class="form-label fw-semibold">Reason for Return</label>
+              <label class="form-label fw-semibold">{{ __('ui.reason_for_return') }}</label>
               <select class="form-select" name="return_reason" required>
-                <option value="">Select Reason</option>
-                <option>Defective Product</option>
-                <option>Wrong Item</option>
-                <option>Changed Mind</option>
-                <option>Size Issue</option>
-                <option>Damaged In Transit</option>
-                <option>Other</option>
+                <option value="">{{ __('ui.select_reason') }}</option>
+                <option>{{ __('ui.defective_product') }}</option>
+                <option>{{ __('ui.wrong_item') }}</option>
+                <option>{{ __('ui.changed_mind') }}</option>
+                <option>{{ __('ui.size_issue') }}</option>
+                <option>{{ __('ui.damaged_in_transit') }}</option>
+                <option>{{ __('ui.other') }}</option>
               </select>
             </div>
             <div class="col-12">
-              <label class="form-label fw-semibold">Refund Amount</label>
+              <label class="form-label fw-semibold">{{ __('ui.refund_amount') }}</label>
               <input type="number" step="0.01" min="0" name="refund_amount" class="form-control" placeholder="0.00">
             </div>
             <div class="col-12">
-              <label class="form-label fw-semibold">Notes</label>
-              <textarea class="form-control" name="notes" rows="4" placeholder="Additional notes"></textarea>
+              <label class="form-label fw-semibold">{{ __('ui.notes') }}</label>
+              <textarea class="form-control" name="notes" rows="4" placeholder="{{ __('ui.additional_notes') }}"></textarea>
             </div>
           </div>
         </div>
         <div class="modal-footer px-4 py-3">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-          <button type="submit" class="btn btn-primary">Save Return</button>
+          <button type="submit" class="btn btn-primary">{{ __('ui.save_return') }}</button>
         </div>
       </form>
     </div>
@@ -294,7 +294,8 @@
     if (!hasEmptyRow) {
       $('#ordersTable').DataTable({
         "aLengthMenu": [[5, 10, 25, -1], [5, 10, 25, "All"]],
-        "iDisplayLength": 5
+        "iDisplayLength": 5,
+        order: []
       });
     }
 

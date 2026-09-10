@@ -114,7 +114,7 @@
                                 };
                             @endphp
                             <tr>
-                                <td><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
+                                <td data-order="{{ $product->id }}"><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
                                 <td>{{ $product->sku }}</td>
                                 <td>
                                     <img

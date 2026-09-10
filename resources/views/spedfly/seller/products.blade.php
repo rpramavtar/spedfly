@@ -100,7 +100,7 @@
                                         };
                                     @endphp
                                     <tr>
-                                        <td><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
+                                        <td data-order="{{ $product->id }}"><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
                                         <td>{{ $product->sku }}</td>
                                         <td>
                                             <img
@@ -168,7 +168,8 @@
 
     $('#productsTable').DataTable({
       aLengthMenu: [[5, 10, 25, -1], [5, 10, 25, '{{ __('ui.all') }}']],
-      iDisplayLength: 5
+      iDisplayLength: 5,
+      order: []
     });
 
     var $autoHideAlert = $('.js-auto-hide-alert');
