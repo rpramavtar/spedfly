@@ -1764,7 +1764,7 @@ private function isValidShopifyCallback(Request $request): bool
 
     private function syncProductWithShopify(Product $product, Request $request): array
     {
-        $user = Auth::user();
+        $user = Auth::user() ?? User::query()->find($product->seller_id);
         $connection = $this->shopifyConnectionData($user);
         $accessToken = $this->shopifyAccessTokenForUser($user);
 
@@ -2065,7 +2065,7 @@ private function isValidShopifyCallback(Request $request): bool
         string $paymentType,
         Request $request
     ): array {
-        $user = Auth::user();
+        $user = Auth::user() ?? User::query()->find($order->seller_id);
         $connection = $this->shopifyConnectionData($user);
         $accessToken = $this->shopifyAccessTokenForUser($user);
 
@@ -2088,11 +2088,26 @@ private function isValidShopifyCallback(Request $request): bool
         $firstName = $customerParts[0] ?? $customerName;
         $lastName = $customerParts[1] ?? '';
 
+        $customerEmail = trim((string) $customer->email);
+        $customerPhone = trim((string) $customer->phone);
+
+        $addressStr = trim((string) $customer->address);
+        $addressParts = array_map('trim', explode(',', $addressStr));
+        $address1 = $addressParts[0] ?? $addressStr;
+        $city = $addressParts[1] ?? null;
+        $province = $addressParts[2] ?? null;
+        $zip = $addressParts[3] ?? null;
+        $country = $addressParts[4] ?? null;
+
         $shippingAddress = array_filter([
             'first_name' => $firstName !== '' ? $firstName : null,
             'last_name' => $lastName !== '' ? $lastName : null,
-            'phone' => trim((string) $customer->phone) !== '' ? (string) $customer->phone : null,
-            'address1' => trim((string) $customer->address) !== '' ? (string) $customer->address : null,
+            'phone' => $customerPhone !== '' ? $customerPhone : null,
+            'address1' => $address1 !== '' && $address1 !== 'Address not provided' ? $address1 : null,
+            'city' => $city !== '' ? $city : null,
+            'province' => $province !== '' ? $province : null,
+            'zip' => $zip !== '' ? $zip : null,
+            'country' => $country !== '' ? $country : null,
         ], static fn ($value) => filled($value));
 
         $payload = [
@@ -2107,9 +2122,13 @@ private function isValidShopifyCallback(Request $request): bool
                 'customer' => array_filter([
                     'first_name' => $firstName !== '' ? $firstName : null,
                     'last_name' => $lastName !== '' ? $lastName : null,
-                    'phone' => trim((string) $customer->phone) !== '' ? (string) $customer->phone : null,
+                    'email' => $customerEmail !== '' ? $customerEmail : null,
+                    'phone' => $customerPhone !== '' ? $customerPhone : null,
                 ], static fn ($value) => filled($value)),
+                'email' => $customerEmail !== '' ? $customerEmail : null,
+                'phone' => $customerPhone !== '' ? $customerPhone : null,
                 'shipping_address' => $shippingAddress,
+                'billing_address' => $shippingAddress,
                 'financial_status' => strtoupper($paymentType) === 'PREPAID' ? 'paid' : 'pending',
                 'send_receipt' => false,
                 'send_fulfillment_receipt' => false,
@@ -2138,6 +2157,14 @@ private function isValidShopifyCallback(Request $request): bool
                 'ok' => false,
                 'message' => 'Shopify order sync failed with status ' . $response->status() . '.' . $responseSnippet,
             ];
+        }
+
+        $orderData = (array) ($response->json('order') ?? []);
+        $shopifyOrderName = trim((string) ($orderData['name'] ?? ''));
+        if ($shopifyOrderName !== '' && str_starts_with((string) $order->external_order_id, 'ORD-')) {
+            $order->update([
+                'external_order_id' => $shopifyOrderName,
+            ]);
         }
 
         return [
@@ -3145,7 +3172,10 @@ private function isValidShopifyCallback(Request $request): bool
         $maxErrorRows = 50;
         $rowNumber = 1;
         $shopifySyncedRows = 0;
+        $shopifySyncedProducts = 0;
         $shopifyFailedRows = 0;
+        $touchedProductIds = [];
+        $ordersToSync = [];
 
         while (($row = fgetcsv($handle)) !== false) {
             $rowNumber++;
@@ -3236,6 +3266,7 @@ private function isValidShopifyCallback(Request $request): bool
             $status = 'Valid';
             $errorText = '-';
             $createdOrderToSync = null;
+            $createdProductId = null;
 
             try {
                 DB::transaction(function () use (
@@ -3252,7 +3283,8 @@ private function isValidShopifyCallback(Request $request): bool
                     $quantity,
                     $paymentType,
                     $orderStatus,
-                    &$createdOrderToSync
+                    &$createdOrderToSync,
+                    &$createdProductId
                 ) {
                     $product = Product::query()
                         ->where('seller_id', $sellerId)
@@ -3274,6 +3306,8 @@ private function isValidShopifyCallback(Request $request): bool
                     } elseif ($product->stock < $quantity) {
                         $product->increment('stock', $quantity + 50);
                     }
+
+                    $createdProductId = $product->id;
 
                     $customer = null;
                     if ($email !== '') {
@@ -3363,25 +3397,12 @@ private function isValidShopifyCallback(Request $request): bool
 
                 $validRows++;
 
+                if ($createdProductId) {
+                    $touchedProductIds[$createdProductId] = true;
+                }
+
                 if (is_array($createdOrderToSync)) {
-                    $orderToSync = Order::query()->with(['customer', 'items.product'])->find($createdOrderToSync['order_id']);
-                    $customerToSync = Customer::query()->find($createdOrderToSync['customer_id']);
-                    $productToSync = Product::query()->find($createdOrderToSync['product_id']);
-
-                    if ($orderToSync && $customerToSync && $productToSync) {
-                        $syncResult = $this->syncCsvOrderToShopify(
-                            $orderToSync,
-                            $customerToSync,
-                            $productToSync,
-                            (int) $createdOrderToSync['quantity'],
-                            (string) $createdOrderToSync['payment_type'],
-                            $request
-                        );
-
-                        if ($syncResult['ok']) {
-                            $shopifySyncedRows++;
-                        }
-                    }
+                    $ordersToSync[] = $createdOrderToSync;
                 }
             } catch (\Throwable $ex) {
                 $errorRows++;
@@ -3426,8 +3447,49 @@ private function isValidShopifyCallback(Request $request): bool
             SellerCsvImport::insert($chunk);
         }
 
+        // 1. Auto-sync all touched products to Shopify in real-time
+        foreach (array_keys($touchedProductIds) as $productId) {
+            $productToSync = Product::query()->find($productId);
+            if ($productToSync) {
+                $pResult = $this->syncProductWithShopify($productToSync, $request);
+                if ($pResult['ok']) {
+                    $shopifySyncedProducts++;
+                } else {
+                    if (count($shopifyErrorLog) < 10) {
+                        $shopifyErrorLog[] = 'Product ' . $productToSync->sku . ' sync note: ' . $pResult['message'];
+                    }
+                }
+            }
+        }
+
+        // 2. Auto-sync all created orders to Shopify in real-time
+        foreach ($ordersToSync as $orderSyncInfo) {
+            $orderToSync = Order::query()->with(['customer', 'items.product'])->find($orderSyncInfo['order_id']);
+            $customerToSync = Customer::query()->find($orderSyncInfo['customer_id']);
+            $productToSync = Product::query()->find($orderSyncInfo['product_id']);
+
+            if ($orderToSync && $customerToSync && $productToSync) {
+                $syncResult = $this->syncCsvOrderToShopify(
+                    $orderToSync,
+                    $customerToSync,
+                    $productToSync,
+                    (int) $orderSyncInfo['quantity'],
+                    (string) $orderSyncInfo['payment_type'],
+                    $request
+                );
+
+                if ($syncResult['ok']) {
+                    $shopifySyncedRows++;
+                } else {
+                    if (count($shopifyErrorLog) < 10) {
+                        $shopifyErrorLog[] = 'Order #' . $orderToSync->external_order_id . ' sync note: ' . $syncResult['message'];
+                    }
+                }
+            }
+        }
+
         $successRate = $totalRows > 0 ? (int) round(($validRows / $totalRows) * 100) : 0;
-        $summaryMessage = "CSV upload completed. Total: {$totalRows}, Valid: {$validRows}, Errors: {$errorRows}.";
+        $summaryMessage = "CSV upload completed. Total: {$totalRows}, Valid: {$validRows}, Errors: {$errorRows}. Auto-synced to Shopify: {$shopifySyncedProducts} product(s), {$shopifySyncedRows} order(s).";
         $now = now();
 
         $notificationRows = [
@@ -3443,6 +3505,8 @@ private function isValidShopifyCallback(Request $request): bool
                     'valid' => $validRows,
                     'errors' => $errorRows,
                     'success_rate' => $successRate,
+                    'shopify_synced_products' => $shopifySyncedProducts,
+                    'shopify_synced_orders' => $shopifySyncedRows,
                 ],
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -3476,7 +3540,7 @@ private function isValidShopifyCallback(Request $request): bool
 
         return redirect()
             ->route('seller.csv-import')
-            ->with('success', 'CSV processed and saved successfully. Total: ' . $totalRows . ', Valid: ' . $validRows . ', Errors: ' . $errorRows . '.')
+            ->with('success', 'CSV processed and auto-synced successfully. Total: ' . $totalRows . ', Valid: ' . $validRows . ', Auto-synced to Shopify: ' . $shopifySyncedProducts . ' products, ' . $shopifySyncedRows . ' orders.')
             ->with('csv_import_result', [
                 'headers' => $headers,
                 'mappings' => $availableMappings,
@@ -3487,6 +3551,7 @@ private function isValidShopifyCallback(Request $request): bool
                     'valid' => $validRows,
                     'errors' => $errorRows,
                     'success_rate' => $successRate,
+                    'shopify_synced_products' => $shopifySyncedProducts,
                     'shopify_synced' => $shopifySyncedRows,
                     'shopify_failed' => $shopifyFailedRows,
                 ],
@@ -4377,6 +4442,23 @@ private function isValidShopifyCallback(Request $request): bool
     public function products()
     {
         $sellerId = (int) Auth::id();
+        $user = Auth::user();
+
+        if ($user && $this->shopifyConnectionData($user)['connected']) {
+            $pendingProducts = Product::query()
+                ->where('seller_id', $sellerId)
+                ->where(function ($q) {
+                    $q->whereNull('shopify_sync_status')
+                      ->orWhere('shopify_sync_status', 'pending');
+                })
+                ->limit(20)
+                ->get();
+
+            foreach ($pendingProducts as $pendingProduct) {
+                $this->syncProductWithShopify($pendingProduct, request());
+            }
+        }
+
         $productsQuery = Product::query()
             ->where('seller_id', $sellerId)
             ->latest();
