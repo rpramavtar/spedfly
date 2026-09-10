@@ -2098,11 +2098,7 @@ private function isValidShopifyCallback(Request $request): bool
 
     private function syncCsvOrderToShopify(
         Order $order,
-        Customer $customer,
-        Product $product,
-        int $quantity,
-        string $paymentType,
-        Request $request
+        ?Request $request = null
     ): array {
         $user = Auth::user() ?? User::query()->find($order->seller_id);
         $connection = $this->shopifyConnectionData($user);
@@ -2122,75 +2118,130 @@ private function isValidShopifyCallback(Request $request): bool
             ];
         }
 
-        $customerName = trim((string) $customer->name);
+        $order->loadMissing(['customer', 'items.product']);
+        $customer = $order->customer;
+
+        $customerName = trim((string) ($customer?->name ?: ''));
         $customerParts = preg_split('/\s+/', $customerName, 2) ?: [];
-        $firstName = $customerParts[0] ?? $customerName;
+        $firstName = $customerParts[0] ?? ($customerName !== '' ? $customerName : 'Customer');
         $lastName = $customerParts[1] ?? '';
 
-        $customerEmail = trim((string) $customer->email);
-        $customerPhone = trim((string) $customer->phone);
+        $customerEmail = trim((string) ($customer?->email ?: ''));
+        $rawPhone = trim((string) ($customer?->phone ?: ''));
 
-        $addressStr = trim((string) $customer->address);
-        $addressParts = array_map('trim', explode(',', $addressStr));
-        $address1 = $addressParts[0] ?? $addressStr;
-        $city = $addressParts[1] ?? null;
-        $province = $addressParts[2] ?? null;
-        $zip = $addressParts[3] ?? null;
-        $country = $addressParts[4] ?? null;
+        // Sanitize phone to valid E.164 (+ followed by 10-15 digits), otherwise omit to avoid Shopify 422 error
+        $validPhone = null;
+        if ($rawPhone !== '') {
+            $digitsOnly = preg_replace('/[^\d]/', '', $rawPhone);
+            if (str_starts_with($rawPhone, '+') && strlen($digitsOnly) >= 10 && strlen($digitsOnly) <= 15) {
+                $validPhone = '+' . $digitsOnly;
+            } elseif (! str_starts_with($rawPhone, '+') && strlen($digitsOnly) === 10) {
+                $validPhone = '+1' . $digitsOnly; // Common US 10-digit fallback if country is US or standard
+            }
+        }
 
-        $shippingAddress = array_filter([
+        $notes = ['Imported from Spedfly. Local Ref: ' . $order->external_order_id];
+        if ($rawPhone !== '') {
+            $notes[] = 'Customer Phone: ' . $rawPhone;
+        }
+
+        $addressStr = trim((string) ($customer?->address ?: ''));
+        $shippingAddress = null;
+        if ($addressStr !== '' && $addressStr !== 'Address not provided') {
+            $addressParts = array_map('trim', explode(',', $addressStr));
+            $address1 = $addressParts[0] ?? $addressStr;
+            $city = $addressParts[1] ?? null;
+            $province = $addressParts[2] ?? null;
+            $zip = $addressParts[3] ?? null;
+            $country = $addressParts[4] ?? 'US';
+
+            $shippingAddress = array_filter([
+                'first_name' => $firstName !== '' ? $firstName : null,
+                'last_name' => $lastName !== '' ? $lastName : null,
+                'address1' => $address1,
+                'city' => $city,
+                'province' => $province,
+                'zip' => $zip,
+                'country' => $country,
+            ], static fn ($value) => filled($value));
+        }
+
+        $lineItems = [];
+        if ($order->items && $order->items->isNotEmpty()) {
+            foreach ($order->items as $item) {
+                $product = $item->product;
+                $title = trim((string) ($product?->name ?: 'Item'));
+                $sku = trim((string) ($product?->sku ?: ''));
+                $unitPrice = (float) ($item->unit_price > 0 ? $item->unit_price : ($item->total_price > 0 && $item->quantity > 0 ? $item->total_price / $item->quantity : ($product?->price ?: 10.0)));
+                $qty = (int) ($item->quantity > 0 ? $item->quantity : 1);
+
+                $lineItemPayload = [
+                    'title' => $title,
+                    'price' => number_format($unitPrice, 2, '.', ''),
+                    'quantity' => $qty,
+                    'requires_shipping' => true,
+                ];
+
+                if ($sku !== '') {
+                    $lineItemPayload['sku'] = $sku;
+                }
+
+                $lineItems[] = $lineItemPayload;
+            }
+        }
+
+        if (empty($lineItems)) {
+            $lineItems[] = [
+                'title' => 'General Order Item',
+                'price' => number_format((float) ($order->amount > 0 ? $order->amount : 10.0), 2, '.', ''),
+                'quantity' => 1,
+                'requires_shipping' => true,
+            ];
+        }
+
+        $customerData = array_filter([
             'first_name' => $firstName !== '' ? $firstName : null,
             'last_name' => $lastName !== '' ? $lastName : null,
-            'phone' => $customerPhone !== '' ? $customerPhone : null,
-            'address1' => $address1 !== '' && $address1 !== 'Address not provided' ? $address1 : null,
-            'city' => $city !== '' ? $city : null,
-            'province' => $province !== '' ? $province : null,
-            'zip' => $zip !== '' ? $zip : null,
-            'country' => $country !== '' ? $country : null,
+            'email' => $customerEmail !== '' ? $customerEmail : null,
         ], static fn ($value) => filled($value));
 
+        $isPrepaid = in_array(strtolower((string) $order->payment_type), ['prepaid', 'paid'], true);
+        $financialStatus = $isPrepaid ? 'paid' : 'pending';
+
         $payload = [
-            'order' => [
-                'line_items' => [[
-                    'title' => $product->name,
-                    'sku' => $product->sku,
-                    'quantity' => $quantity,
-                    'price' => number_format((float) $product->price, 2, '.', ''),
-                    'requires_shipping' => true,
-                ]],
-                'customer' => array_filter([
-                    'first_name' => $firstName !== '' ? $firstName : null,
-                    'last_name' => $lastName !== '' ? $lastName : null,
-                    'email' => $customerEmail !== '' ? $customerEmail : null,
-                    'phone' => $customerPhone !== '' ? $customerPhone : null,
-                ], static fn ($value) => filled($value)),
+            'order' => array_filter([
+                'line_items' => $lineItems,
+                'customer' => ! empty($customerData) ? $customerData : null,
                 'email' => $customerEmail !== '' ? $customerEmail : null,
-                'phone' => $customerPhone !== '' ? $customerPhone : null,
                 'shipping_address' => $shippingAddress,
                 'billing_address' => $shippingAddress,
-                'financial_status' => strtoupper($paymentType) === 'PREPAID' ? 'paid' : 'pending',
+                'financial_status' => $financialStatus,
+                'inventory_behaviour' => 'bypass',
                 'send_receipt' => false,
                 'send_fulfillment_receipt' => false,
-                'tags' => implode(', ', array_filter([
-                    'Spedfly CSV Import',
-                    'Seller #' . (int) $order->seller_id,
-                    'Local Order #' . $order->external_order_id,
-                ])),
-                'note' => 'Imported from CSV by seller dashboard.',
-            ],
+                'tags' => 'Spedfly CSV Import, Seller #' . (int) $order->seller_id,
+                'note' => implode(' | ', $notes),
+                'note_attributes' => $rawPhone !== '' ? [['name' => 'Phone', 'value' => $rawPhone]] : null,
+            ], static fn ($value) => $value !== null),
         ];
+
+        $apiUrl = 'https://' . $connection['shop_domain'] . '/admin/api/' . config('services.shopify.api_version', '2026-04') . '/orders.json';
 
         $response = Http::withHeaders([
             'X-Shopify-Access-Token' => $accessToken,
             'Accept' => 'application/json',
-        ])->asJson()->timeout(20)->post(
-            'https://' . $connection['shop_domain'] . '/admin/api/' . config('services.shopify.api_version', '2026-04') . '/orders.json',
-            $payload
-        );
+        ])->asJson()->timeout(20)->post($apiUrl, $payload);
+
 
         if (! $response->successful()) {
             $responseBody = trim((string) $response->body());
             $responseSnippet = $responseBody !== '' ? ' Response: ' . Str::limit($responseBody, 250) : '';
+
+            Log::warning('Shopify order sync failed.', [
+                'order_id' => $order->id,
+                'status' => $response->status(),
+                'body' => $responseBody,
+            ]);
 
             return [
                 'ok' => false,
@@ -2200,7 +2251,7 @@ private function isValidShopifyCallback(Request $request): bool
 
         $orderData = (array) ($response->json('order') ?? []);
         $shopifyOrderName = trim((string) ($orderData['name'] ?? ''));
-        if ($shopifyOrderName !== '' && str_starts_with((string) $order->external_order_id, 'ORD-')) {
+        if ($shopifyOrderName !== '' && (str_starts_with((string) $order->external_order_id, 'ORD-') || empty($order->external_order_id))) {
             $order->update([
                 'external_order_id' => $shopifyOrderName,
             ]);
@@ -2208,9 +2259,11 @@ private function isValidShopifyCallback(Request $request): bool
 
         return [
             'ok' => true,
-            'message' => 'Shopify order synced successfully.',
+            'message' => 'Shopify order synced successfully as ' . ($shopifyOrderName ?: '#' . $order->id) . '.',
+            'shopify_order_name' => $shopifyOrderName,
         ];
     }
+
 
     private function buildPublicAssetUrl(Request $request, ?string $path): ?string
     {
@@ -2232,12 +2285,26 @@ private function isValidShopifyCallback(Request $request): bool
         return rtrim(config('app.url') ?: $request->getSchemeAndHttpHost(), '/') . '/' . ltrim($publicUrl, '/');
     }
 
-    public function orders()
+    public function orders(Request $request)
     {
         $user = Auth::user();
         if ($user && $user->shopify_shop_domain && $user->shopify_access_token) {
             $accessToken = $this->shopifyAccessTokenForUser($user);
             if ($accessToken) {
+                // 1. Push any pending local orders (e.g. created via CSV) to Shopify
+                $pendingLocalOrders = Order::query()
+                    ->where('seller_id', $user->id)
+                    ->whereRaw('LOWER(COALESCE(status, "")) != ?', ['lead'])
+                    ->where('external_order_id', 'like', 'ORD-%')
+                    ->with(['customer', 'items.product'])
+                    ->limit(10)
+                    ->get();
+
+                foreach ($pendingLocalOrders as $pOrder) {
+                    $this->syncCsvOrderToShopify($pOrder, $request);
+                }
+
+                // 2. Pull latest orders from Shopify
                 $this->pullShopifyRecentOrders($user, $user->shopify_shop_domain, $accessToken);
             }
         }
@@ -2276,12 +2343,37 @@ private function isValidShopifyCallback(Request $request): bool
                 ->with('error', 'Unable to retrieve valid Shopify access token.');
         }
 
+        // 1. Push any pending local un-synced orders to Shopify
+        $pushedCount = 0;
+        $unSyncedOrders = Order::query()
+            ->where('seller_id', $user->id)
+            ->whereRaw('LOWER(COALESCE(status, "")) != ?', ['lead'])
+            ->where('external_order_id', 'like', 'ORD-%')
+            ->with(['customer', 'items.product'])
+            ->limit(30)
+            ->get();
+
+        foreach ($unSyncedOrders as $unSyncedOrder) {
+            $pushRes = $this->syncCsvOrderToShopify($unSyncedOrder, $request);
+            if ($pushRes['ok']) {
+                $pushedCount++;
+            }
+        }
+
+        // 2. Pull all recent orders from Shopify
         $pulledCount = $this->pullShopifyRecentOrders($user, $user->shopify_shop_domain, $accessToken);
+
+        $msg = "Shopify orders synced successfully. ({$pulledCount} orders pulled/updated";
+        if ($pushedCount > 0) {
+            $msg .= ", {$pushedCount} local orders created in Shopify";
+        }
+        $msg .= ')';
 
         return redirect()
             ->route('seller.orders')
-            ->with('success', "Shopify orders synced successfully. ({$pulledCount} orders checked/updated)");
+            ->with('success', $msg);
     }
+
 
     public function returns(Request $request)
     {
@@ -3214,7 +3306,7 @@ private function isValidShopifyCallback(Request $request): bool
         $shopifySyncedProducts = 0;
         $shopifyFailedRows = 0;
         $touchedProductIds = [];
-        $ordersToSync = [];
+        $touchedOrderIds = [];
 
         while (($row = fgetcsv($handle)) !== false) {
             $rowNumber++;
@@ -3304,7 +3396,7 @@ private function isValidShopifyCallback(Request $request): bool
 
             $status = 'Valid';
             $errorText = '-';
-            $createdOrderToSync = null;
+            $createdOrderId = null;
             $createdProductId = null;
 
             try {
@@ -3322,7 +3414,7 @@ private function isValidShopifyCallback(Request $request): bool
                     $quantity,
                     $paymentType,
                     $orderStatus,
-                    &$createdOrderToSync,
+                    &$createdOrderId,
                     &$createdProductId
                 ) {
                     $product = Product::query()
@@ -3401,14 +3493,6 @@ private function isValidShopifyCallback(Request $request): bool
                         ]);
 
                         $product->decrement('stock', min($product->stock, $quantity));
-
-                        $createdOrderToSync = [
-                            'order_id' => $order->id,
-                            'customer_id' => $customer->id,
-                            'product_id' => $product->id,
-                            'quantity' => $quantity,
-                            'payment_type' => $paymentType,
-                        ];
                     } else {
                         $existingItem = OrderItem::query()
                             ->where('order_id', $order->id)
@@ -3432,6 +3516,8 @@ private function isValidShopifyCallback(Request $request): bool
 
                         $product->decrement('stock', min($product->stock, $quantity));
                     }
+
+                    $createdOrderId = $order->id;
                 });
 
                 $validRows++;
@@ -3440,8 +3526,8 @@ private function isValidShopifyCallback(Request $request): bool
                     $touchedProductIds[$createdProductId] = true;
                 }
 
-                if (is_array($createdOrderToSync)) {
-                    $ordersToSync[] = $createdOrderToSync;
+                if ($createdOrderId) {
+                    $touchedOrderIds[$createdOrderId] = true;
                 }
             } catch (\Throwable $ex) {
                 $errorRows++;
@@ -3501,21 +3587,12 @@ private function isValidShopifyCallback(Request $request): bool
             }
         }
 
-        // 2. Auto-sync all created orders to Shopify in real-time
-        foreach ($ordersToSync as $orderSyncInfo) {
-            $orderToSync = Order::query()->with(['customer', 'items.product'])->find($orderSyncInfo['order_id']);
-            $customerToSync = Customer::query()->find($orderSyncInfo['customer_id']);
-            $productToSync = Product::query()->find($orderSyncInfo['product_id']);
+        // 2. Auto-sync all created/updated orders to Shopify in real-time
+        foreach (array_keys($touchedOrderIds) as $orderId) {
+            $orderToSync = Order::query()->with(['customer', 'items.product'])->find($orderId);
 
-            if ($orderToSync && $customerToSync && $productToSync) {
-                $syncResult = $this->syncCsvOrderToShopify(
-                    $orderToSync,
-                    $customerToSync,
-                    $productToSync,
-                    (int) $orderSyncInfo['quantity'],
-                    (string) $orderSyncInfo['payment_type'],
-                    $request
-                );
+            if ($orderToSync) {
+                $syncResult = $this->syncCsvOrderToShopify($orderToSync, $request);
 
                 if ($syncResult['ok']) {
                     $shopifySyncedRows++;
@@ -3526,6 +3603,7 @@ private function isValidShopifyCallback(Request $request): bool
                 }
             }
         }
+
 
         $successRate = $totalRows > 0 ? (int) round(($validRows / $totalRows) * 100) : 0;
         $summaryMessage = "CSV upload completed. Total: {$totalRows}, Valid: {$validRows}, Errors: {$errorRows}. Auto-synced to Shopify: {$shopifySyncedProducts} product(s), {$shopifySyncedRows} order(s).";
