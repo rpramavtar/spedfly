@@ -97,7 +97,7 @@
                         @endphp
                         <tr>
                             <td>#{{ $return->return_code }}</td>
-                            <td>{{ $return->order?->external_order_id ? '#' . $return->order->external_order_id : '-' }}</td>
+                            <td>{{ $return->order?->external_order_id ? (str_starts_with((string)$return->order->external_order_id, '#') ? $return->order->external_order_id : ('#' . $return->order->external_order_id)) : '-' }}</td>
                             <td>{{ $return->seller?->name ?? '-' }}</td>
                             <td>
                                 <div class="fw-semibold">{{ $return->customer?->name ?? $return->order?->customer?->name ?? '-' }}</div>

@@ -62,7 +62,7 @@
                                         <select name="order_id" class="form-select rounded-3 {{ $errors->has('order_id') ? 'is-invalid' : '' }}">
                                             <option value="">Select Order</option>
                                             @foreach($orders as $order)
-                                                <option value="{{ $order->id }}" @selected(old('order_id', $shipment->order_id) == $order->id)>#{{ $order->external_order_id }}</option>
+                                                <option value="{{ $order->id }}" @selected(old('order_id', $shipment->order_id) == $order->id)>{{ str_starts_with((string)$order->external_order_id, '#') ? $order->external_order_id : ('#' . $order->external_order_id) }}</option>
                                             @endforeach
                                         </select>
                                         @error('order_id')

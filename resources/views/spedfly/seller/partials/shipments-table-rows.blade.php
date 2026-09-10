@@ -13,7 +13,7 @@
             </div>
         </td>
         <td>{{ $shipment->courier_name }}</td>
-        <td>{{ $shipment->order ? ('#' . $shipment->order->external_order_id) : '-' }}</td>
+        <td>{{ $shipment->order ? (str_starts_with((string)$shipment->order->external_order_id, '#') ? $shipment->order->external_order_id : ('#' . $shipment->order->external_order_id)) : '-' }}</td>
         <td>
             <span class="badge {{ $statusBadgeClasses[$shipment->status] ?? 'bg-secondary text-white' }}">
                 {{ $statusLabels[$shipment->status] ?? ucfirst($shipment->status) }}

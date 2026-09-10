@@ -38,7 +38,7 @@
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
-                <h3 class="fw-bold mb-1">{{ __('ui.order') }} #{{ $order->external_order_id }}</h3>
+                <h3 class="fw-bold mb-1">{{ __('ui.order') }} {{ str_starts_with((string)$order->external_order_id, '#') ? $order->external_order_id : ('#' . $order->external_order_id) }}</h3>
                 <small class="text-muted">{{ __('ui.placed_on', ['date' => $orderPlacedAt ?: '-']) }}</small><br>
                 <span class="badge {{ $badgeClass }} status-badge">{{ $statusLabel }}</span>
             </div>

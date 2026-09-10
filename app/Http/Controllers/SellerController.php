@@ -974,15 +974,7 @@ private function isValidShopifyCallback(Request $request): bool
             return response('OK', 200);
         }
 
-        $shopifyOrderId = (string) ($payload['id'] ?? '');
-        if ($shopifyOrderId === '') {
-            return response('OK', 200);
-        }
-
-        $order = Order::query()
-            ->where('seller_id', $seller->id)
-            ->where('external_order_id', $shopifyOrderId)
-            ->first();
+        $order = $this->findLocalOrderFromShopifyPayload($seller->id, $payload);
 
         if (! $order) {
             return response('OK', 200);
@@ -1033,15 +1025,7 @@ private function isValidShopifyCallback(Request $request): bool
             return response('OK', 200);
         }
 
-        $shopifyOrderId = (string) ($payload['id'] ?? '');
-        if ($shopifyOrderId === '') {
-            return response('OK', 200);
-        }
-
-        $order = Order::query()
-            ->where('seller_id', $seller->id)
-            ->where('external_order_id', $shopifyOrderId)
-            ->first();
+        $order = $this->findLocalOrderFromShopifyPayload($seller->id, $payload);
 
         if ($order) {
             $order->update([
@@ -1089,15 +1073,7 @@ private function isValidShopifyCallback(Request $request): bool
             return response('OK', 200);
         }
 
-        $shopifyOrderId = (string) ($payload['id'] ?? '');
-        if ($shopifyOrderId === '') {
-            return response('OK', 200);
-        }
-
-        $order = Order::query()
-            ->where('seller_id', $seller->id)
-            ->where('external_order_id', $shopifyOrderId)
-            ->first();
+        $order = $this->findLocalOrderFromShopifyPayload($seller->id, $payload);
 
         if ($order) {
             $order->update([
@@ -1223,6 +1199,38 @@ private function isValidShopifyCallback(Request $request): bool
         $product->update($updates);
     }
 
+    private function findLocalOrderFromShopifyPayload(int $sellerId, array $payload): ?Order
+    {
+        $shopifyId = trim((string) ($payload['id'] ?? ''));
+        $shopifyName = trim((string) ($payload['name'] ?? ''));
+        $shopifyNumber = trim((string) ($payload['order_number'] ?? ''));
+
+        if ($shopifyId === '' && $shopifyName === '' && $shopifyNumber === '') {
+            return null;
+        }
+
+        return Order::query()
+            ->where('seller_id', $sellerId)
+            ->where(function ($q) use ($shopifyId, $shopifyName, $shopifyNumber) {
+                if ($shopifyId !== '') {
+                    $q->where('external_order_id', $shopifyId);
+                }
+                if ($shopifyName !== '') {
+                    $cleanName = ltrim($shopifyName, '#');
+                    $q->orWhere('external_order_id', $shopifyName)
+                      ->orWhere('external_order_id', '#' . $cleanName)
+                      ->orWhere('external_order_id', $cleanName);
+                }
+                if ($shopifyNumber !== '') {
+                    $cleanNumber = ltrim($shopifyNumber, '#');
+                    $q->orWhere('external_order_id', $shopifyNumber)
+                      ->orWhere('external_order_id', '#' . $cleanNumber)
+                      ->orWhere('external_order_id', $cleanNumber);
+                }
+            })
+            ->first();
+    }
+
     private function syncLocalOrderFromShopifyWebhook(string $shopDomain, array $payload, bool $upsertExisting = false): void
     {
         $seller = User::query()
@@ -1233,35 +1241,13 @@ private function isValidShopifyCallback(Request $request): bool
             return;
         }
 
-        $shopifyId = (string) ($payload['id'] ?? '');
-        $shopifyName = trim((string) ($payload['name'] ?? ''));
-        $shopifyNumber = trim((string) ($payload['order_number'] ?? ''));
-
-        if ($shopifyId === '' && $shopifyName === '' && $shopifyNumber === '') {
-            return;
-        }
-
-        $order = Order::query()
-            ->where('seller_id', $seller->id)
-            ->where(function ($q) use ($shopifyId, $shopifyName, $shopifyNumber) {
-                if ($shopifyId !== '') {
-                    $q->where('external_order_id', $shopifyId);
-                }
-                if ($shopifyName !== '') {
-                    $q->orWhere('external_order_id', $shopifyName);
-                }
-                if ($shopifyNumber !== '') {
-                    $q->orWhere('external_order_id', $shopifyNumber)
-                      ->orWhere('external_order_id', '#' . $shopifyNumber);
-                }
-            })
-            ->first();
+        $order = $this->findLocalOrderFromShopifyPayload($seller->id, $payload);
 
         if ($order) {
             if (! $upsertExisting) {
                 Log::info('Shopify order webhook already matched an existing local order.', [
                     'shop_domain' => $shopDomain,
-                    'shopify_order_id' => $shopifyId,
+                    'shopify_order_id' => $payload['id'] ?? null,
                     'external_order_id' => $order->external_order_id,
                 ]);
             }
@@ -1295,7 +1281,10 @@ private function isValidShopifyCallback(Request $request): bool
             return;
         }
 
-        $externalOrderId = $shopifyName !== '' ? $shopifyName : ($shopifyNumber !== '' ? '#' . $shopifyNumber : $shopifyId);
+        $shopifyId = (string) ($payload['id'] ?? '');
+        $shopifyName = trim((string) ($payload['name'] ?? ''));
+        $shopifyNumber = trim((string) ($payload['order_number'] ?? ''));
+        $externalOrderId = $shopifyName !== '' ? $shopifyName : ($shopifyNumber !== '' ? '#' . ltrim($shopifyNumber, '#') : $shopifyId);
 
         $order = Order::query()->create([
             'seller_id' => $seller->id,
@@ -1352,7 +1341,7 @@ private function isValidShopifyCallback(Request $request): bool
 
         $order->fill([
             'amount' => $amount,
-            'payment_type' => $financialStatus === 'paid' ? 'prepaid' : 'cod',
+            'payment_type' => in_array($financialStatus, ['paid', 'partially_paid', 'authorized'], true) ? 'prepaid' : 'cod',
             'status' => $orderStatus,
             'ordered_at' => $orderedAt,
         ])->save();
@@ -1400,28 +1389,72 @@ private function isValidShopifyCallback(Request $request): bool
 
     private function upsertCustomerFromShopifyOrderWebhook(int $sellerId, array $payload): ?Customer
     {
-        $email = trim((string) ($payload['email'] ?? ''));
-        $shippingAddress = (array) ($payload['shipping_address'] ?? []);
-        $billingAddress = (array) ($payload['billing_address'] ?? []);
+        $customerData = is_array($payload['customer'] ?? null) ? $payload['customer'] : [];
+        $shippingAddress = is_array($payload['shipping_address'] ?? null) ? $payload['shipping_address'] : [];
+        $billingAddress = is_array($payload['billing_address'] ?? null) ? $payload['billing_address'] : [];
+        $defaultAddress = is_array($customerData['default_address'] ?? null) ? $customerData['default_address'] : [];
 
-        $firstName = trim((string) ($shippingAddress['first_name'] ?? $billingAddress['first_name'] ?? ''));
-        $lastName = trim((string) ($shippingAddress['last_name'] ?? $billingAddress['last_name'] ?? ''));
+        $firstName = trim((string) (
+            $shippingAddress['first_name'] ??
+            $billingAddress['first_name'] ??
+            $customerData['first_name'] ??
+            $defaultAddress['first_name'] ??
+            ''
+        ));
+
+        $lastName = trim((string) (
+            $shippingAddress['last_name'] ??
+            $billingAddress['last_name'] ??
+            $customerData['last_name'] ??
+            $defaultAddress['last_name'] ??
+            ''
+        ));
+
         $name = trim($firstName . ' ' . $lastName);
+
         if ($name === '') {
-            $name = trim((string) ($payload['customer']['first_name'] ?? '') . ' ' . (string) ($payload['customer']['last_name'] ?? ''));
+            $name = trim((string) (
+                $customerData['name'] ??
+                $shippingAddress['name'] ??
+                $billingAddress['name'] ??
+                $defaultAddress['name'] ??
+                ''
+            ));
         }
+
+        $email = trim((string) (
+            $payload['email'] ??
+            $payload['contact_email'] ??
+            $customerData['email'] ??
+            ''
+        ));
+
         if ($name === '') {
             $name = $email !== '' ? $email : 'Shopify Customer';
         }
 
-        $phone = trim((string) ($shippingAddress['phone'] ?? $billingAddress['phone'] ?? $payload['phone'] ?? ''));
+        $phone = trim((string) (
+            $shippingAddress['phone'] ??
+            $billingAddress['phone'] ??
+            $payload['phone'] ??
+            $customerData['phone'] ??
+            $defaultAddress['phone'] ??
+            ''
+        ));
+
+        $addressSource = ! empty(array_filter($shippingAddress, static fn ($v) => $v !== null && $v !== ''))
+            ? $shippingAddress
+            : (! empty(array_filter($billingAddress, static fn ($v) => $v !== null && $v !== ''))
+                ? $billingAddress
+                : $defaultAddress);
+
         $addressParts = array_filter([
-            trim((string) ($shippingAddress['address1'] ?? $billingAddress['address1'] ?? '')),
-            trim((string) ($shippingAddress['address2'] ?? $billingAddress['address2'] ?? '')),
-            trim((string) ($shippingAddress['city'] ?? $billingAddress['city'] ?? '')),
-            trim((string) ($shippingAddress['province'] ?? $billingAddress['province'] ?? '')),
-            trim((string) ($shippingAddress['country'] ?? $billingAddress['country'] ?? '')),
-            trim((string) ($shippingAddress['zip'] ?? $billingAddress['zip'] ?? '')),
+            trim((string) ($addressSource['address1'] ?? '')),
+            trim((string) ($addressSource['address2'] ?? '')),
+            trim((string) ($addressSource['city'] ?? '')),
+            trim((string) ($addressSource['province'] ?? $addressSource['province_code'] ?? '')),
+            trim((string) ($addressSource['country'] ?? $addressSource['country_name'] ?? $addressSource['country_code'] ?? '')),
+            trim((string) ($addressSource['zip'] ?? '')),
         ]);
         $address = implode(', ', $addressParts);
 
@@ -1439,12 +1472,23 @@ private function isValidShopifyCallback(Request $request): bool
         }
 
         if ($customer) {
-            $customer->update(array_filter([
-                'name' => $name,
-                'email' => $email !== '' ? $email : $customer->email,
-                'phone' => $phone !== '' ? $phone : $customer->phone,
-                'address' => $address !== '' ? $address : $customer->address,
-            ]));
+            $updateData = [];
+            if ($name !== '' && ($customer->name === 'Shopify Customer' || empty($customer->name) || $name !== 'Shopify Customer')) {
+                $updateData['name'] = $name;
+            }
+            if ($email !== '' && (empty($customer->email) || $customer->email !== $email)) {
+                $updateData['email'] = $email;
+            }
+            if ($phone !== '' && (empty($customer->phone) || $customer->phone !== $phone)) {
+                $updateData['phone'] = $phone;
+            }
+            if ($address !== '' && (empty($customer->address) || $customer->address !== $address)) {
+                $updateData['address'] = $address;
+            }
+
+            if ($updateData !== []) {
+                $customer->update($updateData);
+            }
 
             return $customer;
         }

@@ -20,7 +20,7 @@
         <td>#{{ $shipment->shipment_code }}</td>
         <td>
             @if($shipment->order)
-                #{{ $shipment->order->external_order_id }}
+                {{ str_starts_with((string)$shipment->order->external_order_id, '#') ? $shipment->order->external_order_id : ('#' . $shipment->order->external_order_id) }}
             @else
                 -
             @endif

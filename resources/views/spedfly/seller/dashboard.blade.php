@@ -551,7 +551,7 @@
                                     <tr>
                                         <td>
                                             <div class="fw-bold">#{{ $shipment->shipment_code }}</div>
-                                            <small class="text-muted">{{ $shipment->order?->external_order_id ? __('ui.order') . ' #' . $shipment->order->external_order_id : __('ui.no_linked_order') }}</small>
+                                            <small class="text-muted">{{ $shipment->order?->external_order_id ? __('ui.order') . ' ' . (str_starts_with((string)$shipment->order->external_order_id, '#') ? $shipment->order->external_order_id : ('#' . $shipment->order->external_order_id)) : __('ui.no_linked_order') }}</small>
                                         </td>
                                         <td>
                                             <div class="d-flex align-items-center gap-2">
