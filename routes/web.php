@@ -93,6 +93,9 @@ Route::post('/shopify/webhooks/orders/fulfilled', [SellerController::class, 'sho
 Route::post('/shopify/webhooks/orders/partially_fulfilled', [SellerController::class, 'shopifyOrderPartiallyFulfilledWebhook'])
     ->name('shopify.webhooks.orders.partially_fulfilled');
 
+Route::post('/shopify/webhooks/app/uninstalled', [SellerController::class, 'shopifyAppUninstalledWebhook'])
+    ->name('shopify.webhooks.app.uninstalled');
+
 Route::get('/language/{locale}', function (string $locale) {
     $supportedLocales = ['en', 'fr', 'es', 'it'];
 

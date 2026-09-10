@@ -867,7 +867,46 @@ private function isValidShopifyCallback(Request $request): bool
             return response('Invalid webhook signature.', 401);
         }
 
-        Log::info('Shopify GDPR shop/redact webhook received.', (array) json_decode((string) $request->getContent(), true));
+        $payload = (array) json_decode((string) $request->getContent(), true);
+        Log::info('Shopify GDPR shop/redact webhook received.', $payload);
+
+        $shopDomain = $this->normalizeShopifyDomain((string) ($payload['shop_domain'] ?? $request->header('X-Shopify-Shop-Domain', '')));
+        if ($shopDomain !== '') {
+            $seller = User::query()->where('shopify_shop_domain', $shopDomain)->first();
+            if ($seller) {
+                $seller->update([
+                    'shopify_access_token' => null,
+                    'shopify_scope' => null,
+                ]);
+            }
+        }
+
+        return response('OK', 200);
+    }
+
+    public function shopifyAppUninstalledWebhook(Request $request): Response
+    {
+        if (! $this->isValidShopifyWebhook($request)) {
+            return response('Invalid webhook signature.', 401);
+        }
+
+        $shopDomain = $this->normalizeShopifyDomain((string) $request->header('X-Shopify-Shop-Domain', ''));
+        $payload = (array) json_decode((string) $request->getContent(), true);
+
+        Log::info('Shopify app/uninstalled webhook received.', [
+            'shop_domain' => $shopDomain,
+            'payload' => $payload,
+        ]);
+
+        if ($shopDomain !== '') {
+            $seller = User::query()->where('shopify_shop_domain', $shopDomain)->first();
+            if ($seller) {
+                $seller->update([
+                    'shopify_access_token' => null,
+                    'shopify_scope' => null,
+                ]);
+            }
+        }
 
         return response('OK', 200);
     }
@@ -3897,6 +3936,7 @@ private function isValidShopifyCallback(Request $request): bool
         $this->registerShopifyWebhook($shopDomain, $accessToken, 'orders/cancelled', route('shopify.webhooks.orders.cancelled'));
         $this->registerShopifyWebhook($shopDomain, $accessToken, 'orders/fulfilled', route('shopify.webhooks.orders.fulfilled'));
         $this->registerShopifyWebhook($shopDomain, $accessToken, 'orders/partially_fulfilled', route('shopify.webhooks.orders.partially_fulfilled'));
+        $this->registerShopifyWebhook($shopDomain, $accessToken, 'app/uninstalled', route('shopify.webhooks.app.uninstalled'));
     }
 
     private function registerShopifyWebhook(string $shopDomain, string $accessToken, string $topic, string $address): void
