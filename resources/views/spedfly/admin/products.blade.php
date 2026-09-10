@@ -77,6 +77,7 @@
                 <table id="productsTable" class="table table-bordered align-middle">
                     <thead>
                         <tr>
+                            <th style="width: 60px;">ID</th>
                             <th>{{ __('ui.sku') }}</th>
                             <th>{{ __('ui.image') }}</th>
                             <th>{{ __('ui.product') }}</th>
@@ -113,6 +114,7 @@
                                 };
                             @endphp
                             <tr>
+                                <td><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
                                 <td>{{ $product->sku }}</td>
                                 <td>
                                     <img
@@ -137,7 +139,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="12" class="text-center text-muted py-4">{{ __('ui.no_products_found') }}</td>
+                                <td colspan="13" class="text-center text-muted py-4">{{ __('ui.no_products_found') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

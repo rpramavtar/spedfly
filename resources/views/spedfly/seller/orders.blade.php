@@ -44,6 +44,7 @@
                     <table id="ordersTable" class="table table-bordered">
                         <thead>
                             <tr>
+                                <th style="width: 70px;">ID</th>
                                 <th>{{ __('ui.order') }}</th>
                                 <th>{{ __('ui.date') }}</th>
                                 <th>{{ __('ui.customer') }}</th>
@@ -72,7 +73,8 @@
                                     ];
                                 @endphp
                                 <tr>
-                                    <td>{{ $order->external_order_id }}</td>
+                                    <td><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
+                                    <td><span class="fw-semibold text-primary">{{ $order->external_order_id }}</span></td>
                                     <td>{{ optional($order->ordered_at)->format('d M Y') ?? $order->created_at->format('d M Y') }}</td>
                                     <td>
                                         <div class="fw-semibold">{{ $order->customer?->name ?? '-' }}</div>
@@ -104,7 +106,7 @@
                                 </tr>
                             @empty
                                 <tr class="empty-row">
-                                    <td colspan="7" class="text-center text-muted py-4">No orders found.</td>
+                                    <td colspan="8" class="text-center text-muted py-4">No orders found.</td>
                                 </tr>
                             @endforelse
                         </tbody>

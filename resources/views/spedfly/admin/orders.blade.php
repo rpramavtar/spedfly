@@ -85,6 +85,7 @@
           <table id="ordersTable" class="table table-striped table-bordered">
             <thead class="table-light">
               <tr>
+                <th style="width: 70px;">ID</th>
                 <th>{{ __('ui.order_id') }}</th>
                 <th>{{ __('ui.customer') }}</th>
                 <th>{{ __('ui.status') }}</th>
@@ -123,7 +124,8 @@
                   ];
                 @endphp
                 <tr>
-                  <td>{{ $order->external_order_id }}</td>
+                  <td><span class="badge bg-light text-dark border fw-bold">#{{ $order->id }}</span></td>
+                  <td><span class="fw-semibold text-primary">{{ $order->external_order_id }}</span></td>
                   <td>{{ $order->customer?->name ?? '—' }}</td>
                   <td><span class="badge {{ $badgeClass }}">{{ $statusOptions[$status] ?? ucfirst($status) }}</span></td>
                   <td>{{ system_currency_format($order->amount) }}</td>
@@ -164,7 +166,7 @@
                 </tr>
               @empty
                 <tr class="empty-row">
-                  <td class="text-center" colspan="6">{{ __('ui.no_orders_found') }}</td>
+                  <td class="text-center" colspan="7">{{ __('ui.no_orders_found') }}</td>
                 </tr>
               @endforelse
             </tbody>

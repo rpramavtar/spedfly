@@ -63,6 +63,7 @@
                         <table id="productsTable" class="table table-bordered">
                             <thead>
                                 <tr>
+                                    <th style="width: 60px;">ID</th>
                                     <th>{{ __('ui.sku') }}</th>
                                     <th>{{ __('ui.image') }}</th>
                                     <th>{{ __('ui.product_name') }}</th>
@@ -99,6 +100,7 @@
                                         };
                                     @endphp
                                     <tr>
+                                        <td><span class="badge bg-light text-dark border fw-bold">#{{ $product->id }}</span></td>
                                         <td>{{ $product->sku }}</td>
                                         <td>
                                             <img
@@ -134,6 +136,7 @@
                                 @empty
                                     <tr>
                                         <td class="text-center">{{ __('ui.no_products_found') }}</td>
+                                        <td></td>
                                         <td></td>
                                         <td></td>
                                         <td></td>
