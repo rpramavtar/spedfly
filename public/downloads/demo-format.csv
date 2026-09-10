@@ -1,2 +1,5 @@
-customer_name,phone,address,amount,sku,payment_type
-Raj,1234567890,indore,100,1,COD
+customer_name,phone,email,address,sku,product_name,price,quantity,amount,payment_type
+Liam Miller,9876543210,liam.miller@example.com,742 Evergreen Terrace Springfield OR 97477 US,BAG-LTH-BRN,Premium Leather Backpack,89.00,1,89.00,PREPAID
+Emma Watson,9876543211,emma.watson@example.com,100 Universal City Plaza Universal City CA 91608 US,HEADPHONES-NC-BLK,Wireless Noise-Cancelling Headphones,120.00,1,120.00,PREPAID
+Marcus Aurelius,9876543212,marcus.aurelius@example.com,350 Fifth Avenue New York NY 10118 US,WATCH-FIT-SLV,Smart Fitness Smartwatch,59.99,2,119.98,COD
+Sophia Garcia,9876543213,sophia.garcia@example.com,2000 Post Oak Blvd Houston TX 77056 US,HOODIE-ORG-GRY,Organic Cotton Hoodie,49.50,1,49.50,PREPAID
