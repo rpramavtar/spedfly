@@ -143,6 +143,7 @@ Route::prefix('seller')
     Route::get('/csv-import', 'csvImport')->name('csv-import');
     Route::post('/csv-import', 'uploadCsvImport')->name('csv-import.upload');
     Route::get('/csv-import/template', 'csvImportTemplate')->name('csv-import.template');
+    Route::get('/csv-import/shopify-sample', 'csvImportShopifySample')->name('csv-import.shopify-sample');
     Route::get('/settings', 'settings')->name('settings');
     Route::put('/settings', 'updateSettings')->name('settings.update');
     Route::post('/shopify/connect', 'shopifyConnect')->name('shopify.connect');

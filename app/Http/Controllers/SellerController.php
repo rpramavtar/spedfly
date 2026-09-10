@@ -3008,6 +3008,19 @@ private function isValidShopifyCallback(Request $request): bool
         ]);
     }
 
+    public function csvImportShopifySample()
+    {
+        $samplePath = public_path('downloads/shopify-sample-orders.csv');
+
+        if (! file_exists($samplePath)) {
+            abort(404, 'Shopify sample CSV not found.');
+        }
+
+        return response()->download($samplePath, 'shopify-sample-orders.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
     public function uploadCsvImport(Request $request): RedirectResponse
     {
         $validated = $request->validate([

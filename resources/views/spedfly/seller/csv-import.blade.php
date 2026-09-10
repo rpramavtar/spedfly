@@ -4,7 +4,13 @@
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-arrow-up me-2 text-primary"></i>{{ __('ui.csv_import') }}</h4>
-            <div class="d-flex align-items-center gap-2 ms-auto">
+            <div class="d-flex align-items-center gap-2 ms-auto flex-wrap">
+                <a
+                    class="btn btn-outline-success fw-semibold"
+                    href="{{ route('seller.csv-import.shopify-sample') }}"
+                >
+                    <i class="bi bi-file-earmark-arrow-down me-2"></i>Shopify Sample CSV
+                </a>
                 <a
                     class="btn btn-outline-warning fw-semibold"
                     href="{{ route('seller.csv-import.template') }}"
