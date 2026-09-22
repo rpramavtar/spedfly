@@ -307,6 +307,38 @@
     fetchNotifications();
     setInterval(fetchNotifications, 5000);
 
+    // Live real-time polling for Orders table without requiring manual browser refresh
+    var $ordersContainer = $('[data-orders-feed-url]').first();
+    if ($ordersContainer.length) {
+      var ordersFeedUrl = $ordersContainer.data('orders-feed-url');
+      var currentOrdersSignature = $ordersContainer.attr('data-orders-signature') || '';
+
+      function checkLiveOrdersFeed() {
+        if (! ordersFeedUrl || sellerRefreshInFlight) {
+          return;
+        }
+
+        $.get(ordersFeedUrl)
+          .done(function (res) {
+            if (res && res.signature && res.signature !== currentOrdersSignature) {
+              currentOrdersSignature = res.signature;
+              $ordersContainer.attr('data-orders-signature', currentOrdersSignature);
+
+              sellerRefreshInFlight = true;
+              $.get(window.location.href)
+                .done(function (html) {
+                  refreshSellerTablesFromHtml(html);
+                })
+                .always(function () {
+                  sellerRefreshInFlight = false;
+                });
+            }
+          });
+      }
+
+      setInterval(checkLiveOrdersFeed, 5000);
+    }
+
     $markAllBtn.on('click', function () {
       markAllRead();
     });

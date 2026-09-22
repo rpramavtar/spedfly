@@ -2500,7 +2500,15 @@ private function isValidShopifyCallback(Request $request): bool
 
     public function ordersFeed(): JsonResponse
     {
+        $user = Auth::user();
         $sellerId = (int) Auth::id();
+
+        if ($user && $user->shopify_shop_domain && $user->shopify_access_token) {
+            $accessToken = $this->shopifyAccessTokenForUser($user);
+            if ($accessToken) {
+                $this->pullShopifyRecentOrders($user, $user->shopify_shop_domain, $accessToken);
+            }
+        }
 
         $orders = Order::query()
             ->where('seller_id', $sellerId)
