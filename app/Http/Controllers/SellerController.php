@@ -1356,7 +1356,8 @@ private function isValidShopifyCallback(Request $request): bool
 
     private function updateLocalOrderFromShopifyPayload(Order $order, array $payload, int $sellerId): void
     {
-        $customer = $this->upsertCustomerFromShopifyOrderWebhook($sellerId, $payload);
+        $order->loadMissing('customer');
+        $customer = $this->upsertCustomerFromShopifyOrderWebhook($sellerId, $payload, $order->customer);
         if ($customer && $customer->id !== $order->customer_id) {
             $order->customer_id = $customer->id;
         }
@@ -1426,7 +1427,7 @@ private function isValidShopifyCallback(Request $request): bool
             ->delete();
     }
 
-    private function upsertCustomerFromShopifyOrderWebhook(int $sellerId, array $payload): ?Customer
+    private function upsertCustomerFromShopifyOrderWebhook(int $sellerId, array $payload, ?Customer $existingCustomer = null): ?Customer
     {
         $customerData = is_array($payload['customer'] ?? null) ? $payload['customer'] : [];
         $shippingAddress = is_array($payload['shipping_address'] ?? null) ? $payload['shipping_address'] : [];
@@ -1468,10 +1469,6 @@ private function isValidShopifyCallback(Request $request): bool
             ''
         ));
 
-        if ($name === '') {
-            $name = $email !== '' ? $email : 'Shopify Customer';
-        }
-
         $phone = trim((string) (
             $shippingAddress['phone'] ??
             $billingAddress['phone'] ??
@@ -1497,6 +1494,40 @@ private function isValidShopifyCallback(Request $request): bool
         ]);
         $address = implode(', ', $addressParts);
 
+        // If this order already has a linked customer, preserve/enrich it rather than overwriting with fallback
+        if ($existingCustomer) {
+            $hasRealIncomingName = ($name !== '' && $name !== 'Shopify Customer');
+            $hasRealExistingName = ($existingCustomer->name !== '' && $existingCustomer->name !== 'Shopify Customer');
+
+            $updateData = [];
+
+            if ($hasRealIncomingName) {
+                $updateData['name'] = $name;
+            } elseif (! $hasRealExistingName && $email !== '') {
+                $updateData['name'] = $email;
+            }
+
+            if ($email !== '' && (empty($existingCustomer->email) || $existingCustomer->email !== $email)) {
+                $updateData['email'] = $email;
+            }
+            if ($phone !== '' && (empty($existingCustomer->phone) || $existingCustomer->phone !== $phone)) {
+                $updateData['phone'] = $phone;
+            }
+            if ($address !== '' && (empty($existingCustomer->address) || $existingCustomer->address !== $address)) {
+                $updateData['address'] = $address;
+            }
+
+            if ($updateData !== []) {
+                $existingCustomer->update($updateData);
+            }
+
+            return $existingCustomer;
+        }
+
+        if ($name === '') {
+            $name = $email !== '' ? $email : 'Shopify Customer';
+        }
+
         $customerQuery = Customer::query()->where('seller_id', $sellerId);
         $customer = null;
 
@@ -1512,7 +1543,7 @@ private function isValidShopifyCallback(Request $request): bool
 
         if ($customer) {
             $updateData = [];
-            if ($name !== '' && ($customer->name === 'Shopify Customer' || empty($customer->name) || $name !== 'Shopify Customer')) {
+            if ($name !== '' && $name !== 'Shopify Customer' && ($customer->name === 'Shopify Customer' || empty($customer->name) || $customer->name !== $name)) {
                 $updateData['name'] = $name;
             }
             if ($email !== '' && (empty($customer->email) || $customer->email !== $email)) {
