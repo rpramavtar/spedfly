@@ -777,6 +777,11 @@
 
         const chartData = payload.chartData || {};
         const overviewPayload = payload.overviewChart || {};
+        const chartLabels = {
+            orders: @json(__('ui.orders')),
+            revenue: @json(__('ui.revenue')),
+            all: @json(__('ui.all')),
+        };
 
         if (typeof ApexCharts !== 'undefined') {
             const overviewEl = document.querySelector('#overview');

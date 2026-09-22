@@ -13,7 +13,6 @@
 <script src="{{ asset($assetBase . '/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ asset($assetBase . '/vendor/overlay-scroll/jquery.overlayScrollbars.min.js') }}"></script>
 <script src="{{ asset($assetBase . '/vendor/overlay-scroll/custom-scrollbar.js') }}"></script>
-<script src="{{ asset($assetBase . '/vendor/toastify/custom.js') }}"></script>
 <script src="{{ asset($assetBase . '/vendor/apex/apexcharts.min.js') }}"></script>
 <script src="{{ asset($assetBase . '/js/custom.js') }}"></script>
 
