@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    return redirect()->route('seller.index');
+Route::get('/', function (\Illuminate\Http\Request $request) {
+    return redirect()->route('seller.index', $request->query());
 });
 
 Route::get('/privacy-policy', function () {

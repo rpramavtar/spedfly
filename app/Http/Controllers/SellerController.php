@@ -35,8 +35,26 @@ use Illuminate\Auth\Notifications\ResetPassword;
 
 class SellerController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $shop = trim((string) $request->query('shop', ''));
+        if ($shop !== '') {
+            $shopDomain = $this->normalizeShopifyDomain($shop);
+            if ($shopDomain !== '') {
+                if (Auth::check() && Auth::user()->type === 'seller') {
+                    $user = Auth::user();
+                    $state = Str::random(40);
+                    $request->session()->put('shopify_oauth_state', $state);
+                    $request->session()->put('shopify_oauth_shop', $shopDomain);
+                    $request->session()->put('shopify_oauth_user_id', $user->id);
+
+                    return redirect()->away($this->buildShopifyAuthorizationUrl($request, $shopDomain, $state));
+                }
+
+                $request->session()->put('shopify_pending_shop', $shopDomain);
+            }
+        }
+
         if (Auth::check()) {
             return Auth::user()->type === 'admin'
                 ? redirect()->route('admin.dashboard')
@@ -81,7 +99,22 @@ class SellerController extends Controller
 
         $request->session()->regenerate();
 
-        return $validated['type'] === 'admin'
+        if ($validated['type'] === 'Seller') {
+            $pendingShop = (string) $request->session()->pull('shopify_pending_shop', '');
+            if ($pendingShop !== '') {
+                $shopDomain = $this->normalizeShopifyDomain($pendingShop);
+                if ($shopDomain !== '') {
+                    $state = Str::random(40);
+                    $request->session()->put('shopify_oauth_state', $state);
+                    $request->session()->put('shopify_oauth_shop', $shopDomain);
+                    $request->session()->put('shopify_oauth_user_id', $user?->id);
+
+                    return redirect()->away($this->buildShopifyAuthorizationUrl($request, $shopDomain, $state));
+                }
+            }
+        }
+
+        return $validated['type'] === 'Admin'
             ? redirect()->route('admin.dashboard')
             : redirect()->route('seller.dashboard');
     }
